@@ -5,18 +5,12 @@
 ## 目录结构
 
 ```
-D:\workspaces\Greasy\
 ├── projects/                      # 所有油猴插件
 │   ├── greasy-ad-skipper/         # 插件 1: 视频广告跳过助手
 │   ├── _template/                 # 新插件模板
 │   └── ...                        # 后续新增插件在此
-│
-├── task_plan.md                   # 当前开发计划
-├── findings.md                    # 研究发现 / 技术决策
-├── progress.md                    # 进度日志
-├── MEMORY.md                      # 记忆索引
-├── memory/                        # 持久化记忆
-└── README.md                      # ← 本文件
+├── .gitignore
+└── README.md
 ```
 
 ## 插件列表
