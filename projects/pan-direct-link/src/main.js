@@ -502,28 +502,101 @@
         log('--- DOM 探测结束 ---');
       },
 
+      // 从页面中提取文件信息（查找 script 标签中的 JSON 数据）
+      _extractFileInfoFromPage() {
+        log('尝试从页面提取文件信息...');
+        // 遍历所有 script 标签
+        const scripts = document.querySelectorAll('script:not([src])');
+        for (const script of scripts) {
+          const text = script.textContent || '';
+          // 查找包含 fs_id 的 JSON 数据
+          const matches = text.match(/"fs_id":\s*(\d+)/g);
+          if (matches) {
+            log(`找到 ${matches.length} 个 fs_id 引用`);
+            // 尝试提取完整的文件列表
+            try {
+              // 匹配可能的 JSON 块: "list":[{...}]
+              const listMatch = text.match(/"list"\s*:\s*(\[[\s\S]*?\])\s*[},\]]/);
+              if (listMatch) {
+                const list = JSON.parse(listMatch[1]);
+                if (Array.isArray(list)) {
+                  for (const item of list) {
+                    if (item.fs_id) {
+                      const pos = item._position ?? list.indexOf(item);
+                      this._fileMap.set(String(pos), {
+                        fs_id: String(item.fs_id),
+                        name: item.file_name || item.server_filename || ''
+                      });
+                    }
+                  }
+                  log(`从页面提取了 ${list.length} 个文件信息`);
+                  return;
+                }
+              }
+            } catch (e) {}
+            // 没找到完整 JSON，单用正则提取
+            const ids = text.match(/"fs_id":\s*(\d+)/g);
+            ids.forEach((m, i) => {
+              const id = m.match(/\d+/)[0];
+              this._fileMap.set(String(i), { fs_id: id, name: '' });
+            });
+            log(`从页面提取了 ${ids.length} 个 fs_id`);
+          }
+        }
+
+        // 也尝试找 __INITIAL_STATE__ 等全局变量
+        for (const key of ['__INITIAL_STATE__', 'yunData', 'pageData', 'shareData']) {
+          try {
+            const val = unsafeWindow[key];
+            if (val) {
+              const files = val?.data?.list || val?.list || val?.fileList || [];
+              if (Array.isArray(files)) {
+                for (const item of files) {
+                  if (item.fs_id) {
+                    const pos = item._position ?? files.indexOf(item);
+                    this._fileMap.set(String(pos), {
+                      fs_id: String(item.fs_id),
+                      name: item.file_name || item.server_filename || item.name || ''
+                    });
+                  }
+                }
+                log(`从 window.${key} 提取了 ${files.length} 个文件`);
+                return;
+              }
+            }
+          } catch (e) {}
+        }
+      },
+
       // 注册 API 拦截钩子
       setupInterceptors() {
         // 1. 拦截文件列表 API（获取 fs_id）
-        // 分享页加载文件列表: /share/list?...
-        // 个人页: /api/list?...
-        NetworkInterceptor.addHook('/share/list', (body, url) => {
-          try {
-            const data = JSON.parse(body);
-            if (data?.data?.list) {
-              for (const item of data.data.list) {
-                if (item.fs_id) {
-                  // 按 position 索引存储
-                  this._fileMap.set(String(item._position || item.index || data.data.list.indexOf(item)), {
-                    fs_id: item.fs_id,
-                    name: item.file_name || item.server_filename || ''
-                  });
+        const listHooks = [
+          '/share/list',
+          '/api/list',
+          '/api/file/list',
+          '/rest/2.0/services/cloud_dl'
+        ];
+        for (const path of listHooks) {
+          NetworkInterceptor.addHook(path, (body, url) => {
+            try {
+              const data = JSON.parse(body);
+              const list = data?.data?.list || data?.list || [];
+              if (Array.isArray(list) && list.length > 0) {
+                for (const item of list) {
+                  if (item.fs_id) {
+                    const pos = item._position ?? list.indexOf(item);
+                    this._fileMap.set(String(pos), {
+                      fs_id: String(item.fs_id),
+                      name: item.file_name || item.server_filename || ''
+                    });
+                  }
                 }
+                log(`API 缓存 ${list.length} 个文件信息`);
               }
-              log(`缓存 ${data.data.list.length} 个文件信息`);
-            }
-          } catch (e) {}
-        });
+            } catch (e) {}
+          });
+        }
 
         // 2. 拦截下载请求
         const dlPaths = [
@@ -540,11 +613,16 @@
             }
           });
         }
+      },
 
-        // 3. 拦截 /api/invoker/check 并打印响应
-        NetworkInterceptor.addHook('/api/invoker/check', (body, url) => {
-          log(`客户端检查响应: ${body}`);
-        });
+      // 初始化时主动提取文件信息
+      init() {
+        // 先尝试从页面提取
+        setTimeout(() => this._extractFileInfoFromPage(), 2000);
+        // 5 秒后再试一次（可能数据是异步加载的）
+        setTimeout(() => {
+          if (this._fileMap.size === 0) this._extractFileInfoFromPage();
+        }, 6000);
       },
 
       // 获取直链（直接调用百度 API）
@@ -638,6 +716,9 @@
     // 配置当前平台的适配器
     const adapter = Adapters[platform.name];
     if (adapter) {
+      // 适配器初始化（提取页面文件信息等）
+      if (typeof adapter.init === 'function') adapter.init();
+
       // 注册 API 拦截钩子
       adapter.setupInterceptors();
 
