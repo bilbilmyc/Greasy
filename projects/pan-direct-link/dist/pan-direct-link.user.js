@@ -460,12 +460,9 @@
         _isSharePage() {
           return location.pathname.startsWith('/s/');
         },
-        // 文件行选择器
+        // 文件行选择器（不使用 this，避免上下文丢失）
         rowSelector() {
-          if (this._isSharePage()) {
-            return 'dd.g-clearfix.JS-item-active.open-enable';
-          }
-          return '.file-list-item, [class*="filelist"] [class*="item"], .file-row';
+          return location.pathname.startsWith('/s/') ? 'dd.g-clearfix.JS-item-active.open-enable' : '.file-list-item, [class*="filelist"] [class*="item"], .file-row';
         },
         getFileName(row) {
           var _el$textContent;
