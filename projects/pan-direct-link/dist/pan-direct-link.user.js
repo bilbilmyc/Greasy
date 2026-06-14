@@ -408,7 +408,7 @@
           // 注入直链按钮
           LinkPresenter.addDownloadButton(row, async btn => {
             try {
-              const link = await this._fetchDirectLink(platform, fileId);
+              const link = await this._fetchDirectLink(this._platform, fileId);
               if (link) {
                 LinkPresenter.showLink(link, fileName);
                 btn.textContent = '✅ 已获取';
@@ -435,7 +435,7 @@
         if (adapter && typeof adapter.fetchDirectLink === 'function') {
           return adapter.fetchDirectLink(fileId);
         }
-        log(`获取直链逻辑待实现: ${platform} fileId=${fileId}`);
+        log(`获取直链逻辑待实现: ${this._platform} fileId=${fileId}`);
         return null;
       },
       stop() {
