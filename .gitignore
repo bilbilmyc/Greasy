@@ -1,0 +1,26 @@
+# Node.js
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Environment
+.env
+.env.local
+
+# Build cache
+projects/*/node_modules/
+projects/*/package-lock.json

@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Greasy Ad Skipper Rules Schema",
+  "type": "object",
+  "required": ["version", "rules"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "规则版本号，语义化版本"
+    },
+    "updatedAt": {
+      "type": "string",
+      "description": "最后更新日期"
+    },
+    "rules": {
+      "type": "object",
+      "description": "按平台分类的规则集合",
+      "patternProperties": {
+        "^(youtube|bilibili|tencent|iqiyi|youku|mgtv)$": {
+          "$ref": "#/definitions/PlatformRules"
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultSettings": {
+      "type": "object",
+      "description": "默认用户配置"
+    }
+  },
+  "definitions": {
+    "PlatformRules": {
+      "type": "object",
+      "properties": {
+        "selectors": {
+          "type": "object",
+          "properties": {
+            "adContainer": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "广告容器 CSS 选择器列表"
+            },
+            "skipButton": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "跳过按钮 CSS 选择器列表"
+            },
+            "adBadge": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "广告标记元素选择器"
+            },
+            "countdown": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "广告倒计时显示元素选择器"
+            },
+            "detectionWarning": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Adblock 检测警告元素选择器"
+            }
+          }
+        },
+        "observers": {
+          "type": "object",
+          "properties": {
+            "playerContainer": {
+              "type": "string",
+              "description": "监听 DOM 变化的播放器容器选择器"
+            },
+            "adContainerParent": {
+              "type": "string",
+              "description": "广告容器父级选择器（可选）"
+            }
+          },
+          "required": ["playerContainer"]
+        },
+        "skipStrategies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "click_skip_button",
+              "seek_to_end",
+              "remove_element",
+              "timer_accelerate",
+              "wait_and_remove"
+            ]
+          },
+          "description": "跳过策略（按优先级排序）"
+        },
+        "embeddedAdDetection": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "method": { "type": "string" },
+            "danmakuKeywords": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "minKeywordDensity": { "type": "number" },
+            "detectionWindowMs": { "type": "number" }
+          }
+        },
+        "antiDetection": {
+          "type": "object",
+          "properties": {
+            "clickDelay": {
+              "type": "object",
+              "properties": {
+                "min": { "type": "number" },
+                "max": { "type": "number" }
+              }
+            },
+            "observerDebounceMs": { "type": "number" },
+            "randomizeSelectors": { "type": "boolean" },
+            "simulateMouseMove": { "type": "boolean" },
+            "useNativeAPIsOnly": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["selectors", "observers", "skipStrategies"]
+    }
+  }
+}

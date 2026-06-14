@@ -1,0 +1,197 @@
+{
+  "version": "0.1.0",
+  "updatedAt": "2026-06-14",
+  "rules": {
+    "youtube": {
+      "selectors": {
+        "adContainer": [
+          ".video-ads ytd-action-companion-ad-renderer",
+          "ytd-ad-slot-renderer",
+          "ytd-in-feed-ad-layout-renderer",
+          "ytd-display-ad-renderer",
+          "ytd-statement-banner-renderer",
+          "#masthead-ad",
+          "ytd-search-panel-ad-renderer",
+          "ytd-ad-simple-promo-card-renderer",
+          "ytd-merchandise-shelf-renderer"
+        ],
+        "adBadge": [
+          ".ytp-ad-badge-label",
+          ".ytp-ad-simple-ad-badge",
+          ".ytp-ad-text"
+        ],
+        "skipButton": [
+          ".ytp-ad-skip-button",
+          ".ytp-ad-skip-button-modern",
+          "button[aria-label*='Skip']",
+          "button[aria-label*='跳过']"
+        ],
+        "detectionWarning": [
+          "ytd-enforcement-message-view-model",
+          "ytd-enforcement-message-ad-blocker-view-model",
+          "#ad-blocker-detected"
+        ]
+      },
+      "observers": {
+        "playerContainer": "ytd-watch-flexy",
+        "adContainerParent": "#movie_player"
+      },
+      "skipStrategies": ["click_skip_button", "seek_to_end", "wait_and_remove"],
+      "antiDetection": {
+        "clickDelay": { "min": 800, "max": 3500 },
+        "observerDebounceMs": 500,
+        "randomizeSelectors": true,
+        "simulateMouseMove": true,
+        "useNativeAPIsOnly": false
+      }
+    },
+    "bilibili": {
+      "selectors": {
+        "adContainer": [
+          ".bpx-player-video-ad",
+          ".bilibili-player-video-btn-ad",
+          ".ad-report",
+          ".bpx-player-video-pause-ad",
+          ".ad-tip",
+          ".video-ads"
+        ],
+        "skipButton": [
+          ".bpx-player-video-ad .bpx-player-ad-skip",
+          ".bpx-player-video-ad .bpx-player-ad-countdown",
+          ".bilibili-player-video-btn-ad .bpx-player-ad-skip"
+        ],
+        "adBadge": [
+          ".bpx-player-ad-badge",
+          ".bpx-ad-badge"
+        ]
+      },
+      "observers": {
+        "playerContainer": ".bpx-player-video-wrap",
+        "adContainer": ".bpx-player-video-ad"
+      },
+      "skipStrategies": ["remove_element", "click_skip_button"],
+      "embeddedAdDetection": {
+        "enabled": true,
+        "method": "danmaku_keyword",
+        "danmakuKeywords": [
+          "广告", "恰饭", "金主", "推广", "植入", "赞助",
+          "合作", "商务", "带货", "广告位", "防不胜防",
+          "入股", "品牌方"
+        ],
+        "minKeywordDensity": 0.3,
+        "detectionWindowMs": 10000
+      },
+      "antiDetection": {
+        "clickDelay": { "min": 200, "max": 800 },
+        "observerDebounceMs": 300,
+        "randomizeSelectors": false
+      }
+    },
+    "tencent": {
+      "selectors": {
+        "adContainer": [
+          ".txp_ad",
+          ".tvp_ad_container",
+          ".mod_ad",
+          ".tenvideo_ad",
+          ".ad_content",
+          ".txp_ad_container"
+        ],
+        "skipButton": [
+          ".tvp_ad_skip",
+          ".txp_ad_skip_btn",
+          ".tenvideo_ad_skip"
+        ],
+        "countdown": [
+          ".txp_ad_countdown",
+          ".tvp_ad_countdown"
+        ]
+      },
+      "observers": {
+        "playerContainer": "#tenvideo_player"
+      },
+      "skipStrategies": ["timer_accelerate", "remove_element", "click_skip_button"]
+    },
+    "iqiyi": {
+      "selectors": {
+        "adContainer": [
+          ".adUIBox",
+          "[class*='adLayer']",
+          ".iqp-ad",
+          ".ad-mark"
+        ],
+        "skipButton": [
+          ".know-detail",
+          "[class*='closeAdBtn']",
+          "#btn_auto_13"
+        ],
+        "countdown": [
+          ".countdown-topright"
+        ],
+        "banner": [
+          "[class*='adBanner']",
+          "[class*='adTitleBox']"
+        ]
+      },
+      "observers": {
+        "playerContainer": "#flash_container, .XPlayer"
+      },
+      "skipStrategies": ["remove_element", "timer_accelerate", "click_skip_button"]
+    },
+    "youku": {
+      "selectors": {
+        "adContainer": [
+          ".advertise-layer",
+          ".youku-advertise-layer",
+          ".ad-box",
+          ".ad-custom-wrap"
+        ],
+        "skipButton": [
+          ".ad-colse-btn",
+          "[class*='loginnew_close']"
+        ],
+        "countdown": [
+          ".adtopright_container",
+          ".advertise-layer"
+        ],
+        "adLabel": [
+          ".ad-text",
+          ".ad-tag"
+        ]
+      },
+      "observers": {
+        "playerContainer": "#youku-player, .advertise-layer"
+      },
+      "skipStrategies": ["remove_element", "timer_accelerate", "click_skip_button"]
+    },
+    "mgtv": {
+      "selectors": {
+        "adContainer": [
+          ".mgtv-ad",
+          ".mgtv-ad-block",
+          ".mgtv-ad-countdown",
+          ".ad-mark"
+        ],
+        "skipButton": [
+          ".mgtv-ad-skip",
+          ".mgtv-skip-ad-btn"
+        ],
+        "countdown": [
+          ".mgtv-ad-countdown-text"
+        ]
+      },
+      "observers": {
+        "playerContainer": "#mgtv-player"
+      },
+      "skipStrategies": ["remove_element", "click_skip_button"]
+    }
+  },
+  "defaultSettings": {
+    "skipMode": "auto",
+    "enableSponsorBlock": true,
+    "enableCrowdSource": false,
+    "showStatusBall": true,
+    "showProgressOverlay": false,
+    "stealthMode": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "greasy-ad-skipper",
+  "version": "0.1.0",
+  "description": "多平台视频广告跳过油猴插件 - YouTube / B站 / 腾讯视频 / 爱奇艺 / 优酷",
+  "private": true,
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w",
+    "build:meta": "node scripts/generate-meta.js",
+    "release": "npm run build && npm run build:meta"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-json": "^6.1.0",
+    "rollup": "^4.12.0"
+  }
+}
