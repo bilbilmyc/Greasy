@@ -507,11 +507,18 @@
             for (const key of globalKeys) {
               try {
                 if (window[key]) {
-                  const val = JSON.stringify(window[key]).substring(0, 400);
-                  log(`全局变量 ${key}: ${val}`);
+                  const raw = JSON.stringify(window[key]);
+                  const val = raw.substring(0, 1000);
+                  log(`全局变量 ${key} (${raw.length} chars): ${val}`);
+                } else {
+                  log(`全局变量 ${key}: 不存在`);
                 }
-              } catch (e) {}
+              } catch (e) {
+                log(`${key} 读取失败: ${e.message}`);
+              }
             }
+            // 打印 cookie 中的 BDSTOKEN
+            log('Cookies:', document.cookie.substring(0, 300));
             // 额外打印 bdstoken 提取结果
             const share = this._getShareParams();
             log(`bdstoken="${share.bdstoken}" surl="${share.surl}" pwd="${share.pwd}"`);
@@ -667,15 +674,51 @@
             });
           }
 
-          // 2. 拦截下载请求
-          const dlPaths = ['/api/download', '/share/download', '/api/sharedownload'];
-          for (const path of dlPaths) {
-            NetworkInterceptor.addHook(path, (body, url) => {
-              const result = LinkExtractor.extract('baidu', body, url);
-              if (result) {
-                log('捕获百度直链:', result.url.substring(0, 80) + '...');
-                LinkPresenter.showLink(result.url, '百度网盘文件');
+          // 2. 通用 dlink 捕获器 — 任何包含 dlink 的响应都捕获
+          NetworkInterceptor.addHook(/dlink|download_url|downloadUrl/, (body, url) => {
+            try {
+              var _data$data8;
+              const data = JSON.parse(body);
+              let dlink = (data == null || (_data$data8 = data.data) == null ? void 0 : _data$data8.dlink) || (data == null ? void 0 : data.dlink) || (data == null ? void 0 : data.url) || '';
+              if (dlink) {
+                dlink = dlink.replace(/\\\//g, '/');
+                log('拦截器捕获到 dlink:', url);
+                LinkPresenter.showLink(dlink, '百度网盘文件');
               }
+            } catch (e) {}
+          });
+
+          // 3. 所有文件列表类 API - 捕获 fs_id 列表
+          const listHooks2 = ['/share/list', '/api/list', '/file/list', '/share/filelist'];
+          for (const path of listHooks2) {
+            NetworkInterceptor.addHook(path, (body, url) => {
+              try {
+                var _data$data9;
+                const data = JSON.parse(body);
+                const list = (data == null || (_data$data9 = data.data) == null ? void 0 : _data$data9.list) || (data == null ? void 0 : data.list) || [];
+                if (Array.isArray(list)) {
+                  for (const item of list) {
+                    if (item.fs_id) {
+                      const pos = item._position ?? list.indexOf(item);
+                      const dlink = item.dlink || '';
+                      this._fileMap.set(String(pos), {
+                        fs_id: String(item.fs_id),
+                        name: item.file_name || item.server_filename || '',
+                        dlink: dlink ? dlink.replace(/\\\//g, '/') : ''
+                      });
+                    }
+                  }
+                  log(`文件列表API缓存 ${list.length} 项`);
+                  // 有 dlink 直接弹窗
+                  for (const _ref3 of this._fileMap) {
+                    const v = _ref3[1];
+                    if (v.dlink) {
+                      LinkPresenter.showLink(v.dlink, v.name);
+                      break;
+                    }
+                  }
+                }
+              } catch (e) {}
             });
           }
         },
@@ -752,9 +795,9 @@
               const text = await resp.text();
               // 解析响应中的 dlink
               try {
-                var _data$data8;
+                var _data$data0;
                 const data = JSON.parse(text);
-                let dlink = (data == null || (_data$data8 = data.data) == null ? void 0 : _data$data8.dlink) || (data == null ? void 0 : data.dlink) || null;
+                let dlink = (data == null || (_data$data0 = data.data) == null ? void 0 : _data$data0.dlink) || (data == null ? void 0 : data.dlink) || null;
                 if (dlink) {
                   // 百度返回的 dlink 可能需要追加参数
                   dlink = dlink.replace(/\\\//g, '/');
@@ -775,9 +818,9 @@
             });
             const text = await resp.text();
             try {
-              var _data$data9;
+              var _data$data1;
               const data = JSON.parse(text);
-              let dlink = (data == null || (_data$data9 = data.data) == null ? void 0 : _data$data9.dlink) || (data == null ? void 0 : data.dlink) || null;
+              let dlink = (data == null || (_data$data1 = data.data) == null ? void 0 : _data$data1.dlink) || (data == null ? void 0 : data.dlink) || null;
               if (dlink) return dlink.replace(/\\\//g, '/');
             } catch (e) {}
             log('download 响应:', text.substring(0, 300));
