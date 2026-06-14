@@ -18,6 +18,7 @@
 | # | 插件 | 状态 | 描述 |
 |---|------|------|------|
 | 1 | [greasy-ad-skipper](projects/greasy-ad-skipper/) | ✅ 开发完成 | 多平台视频广告跳过（YouTube/B站/腾讯/爱奇艺/优酷/芒果TV） |
+| 2 | [pan-direct-link](projects/pan-direct-link/) | 🚧 开发中 | 百度网盘/夸克网盘 网页端直链下载 |
 
 ## 新建插件
 
