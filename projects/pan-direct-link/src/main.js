@@ -511,49 +511,91 @@
         log('--- DOM 探测结束 ---');
       },
 
-      // 从页面中提取文件信息（查找 script 标签中的 JSON 数据）
+      // 从页面中提取文件信息和直链（查找 script 标签中的 JSON 数据）
       _extractFileInfoFromPage() {
         log('尝试从页面提取文件信息...');
-        // 遍历所有 script 标签
         const scripts = document.querySelectorAll('script:not([src])');
         for (const script of scripts) {
           const text = script.textContent || '';
-          // 查找包含 fs_id 的 JSON 数据
-          const matches = text.match(/"fs_id":\s*(\d+)/g);
-          if (matches) {
-            log(`找到 ${matches.length} 个 fs_id 引用`);
-            // 尝试提取完整的文件列表
-            try {
-              // 匹配可能的 JSON 块: "list":[{...}]
-              const listMatch = text.match(/"list"\s*:\s*(\[[\s\S]*?\])\s*[},\]]/);
-              if (listMatch) {
-                const list = JSON.parse(listMatch[1]);
-                if (Array.isArray(list)) {
-                  for (const item of list) {
-                    if (item.fs_id) {
-                      const pos = item._position ?? list.indexOf(item);
-                      this._fileMap.set(String(pos), {
-                        fs_id: String(item.fs_id),
-                        name: item.file_name || item.server_filename || ''
-                      });
-                    }
-                  }
-                  log(`从页面提取了 ${list.length} 个文件信息`);
-                  return;
+
+          // 1. 查找 dlink（直链）— 如果能直接找到就不用调 API 了
+          const dlinkMatch = text.match(/"dlink"\s*:\s*"([^"]+)"/);
+          if (dlinkMatch) {
+            const dlink = dlinkMatch[1].replace(/\\\//g, '/');
+            log('从页面找到 dlink!');
+            return dlink;  // 直接返回下载链接
+          }
+
+          // 2. 查找 fs_id + 文件列表 JSON
+          const fsMatches = text.match(/"fs_id":\s*(\d+)/g);
+          if (!fsMatches) continue;
+          log(`找到 ${fsMatches.length} 个 fs_id 引用`);
+
+          // 尝试提取 list JSON
+          try {
+            // 查找完整 JSON 对象: "list":[{...}]
+            let listData = null;
+
+            // 方法1: 标准 JSON key
+            const listMatch = text.match(/"list"\s*:\s*(\[[\s\S]*?\])\s*[},\]]/);
+            if (listMatch) {
+              try {
+                listData = JSON.parse(listMatch[1]);
+              } catch (e) {}
+            }
+
+            // 方法2: 直接从 window.yunData 找
+            const yunMatch = text.match(/yunData\s*=\s*({[\s\S]+?});/);
+            if (yunMatch) {
+              try {
+                const yunData = JSON.parse(yunMatch[1]);
+                const files = yunData?.data?.list || yunData?.list || [];
+                if (Array.isArray(files) && files.length > 0) listData = files;
+              } catch (e) {}
+            }
+
+            // 方法3: 从 dlink 反推 — 如果某行有 dlink_url 或 download_url
+            const dlUrlMatch = text.match(/"(?:dlink_url|download_url|url)"\s*:\s*"([^"]+)"/);
+            if (dlUrlMatch && !listData) {
+              const url = dlUrlMatch[1].replace(/\\\//g, '/');
+              log('从页面找到下载 URL:', url.substring(0, 80) + '...');
+              return url;
+            }
+
+            if (Array.isArray(listData) && listData.length > 0) {
+              for (const item of listData) {
+                if (item.fs_id) {
+                  const pos = item._position ?? listData.indexOf(item);
+                  // 如果列表里已经有 dlink，直接存下来
+                  const dlink = item.dlink || item.url || item.download_url || '';
+                  this._fileMap.set(String(pos), {
+                    fs_id: String(item.fs_id),
+                    name: item.file_name || item.server_filename || '',
+                    dlink: typeof dlink === 'string' ? dlink.replace(/\\\//g, '/') : ''
+                  });
                 }
               }
-            } catch (e) {}
-            // 没找到完整 JSON，单用正则提取
-            const ids = text.match(/"fs_id":\s*(\d+)/g);
-            ids.forEach((m, i) => {
-              const id = m.match(/\d+/)[0];
+              log(`从页面提取了 ${listData.length} 个文件 (含${this._fileMap.size}个fs_id)`);
+              // 如果有 dlink，直接返回第一个
+              for (const [, v] of this._fileMap) {
+                if (v.dlink) return v.dlink;
+              }
+              return;
+            }
+          } catch (e) {}
+
+          // 3. 只有 fs_id，没有完整 list JSON
+          const ids = text.match(/"fs_id":\s*(\d+)/g);
+          ids.forEach((m, i) => {
+            const id = m.match(/\d+/)[0];
+            if (![...this._fileMap.values()].some(v => v.fs_id === id)) {
               this._fileMap.set(String(i), { fs_id: id, name: '' });
-            });
-            log(`从页面提取了 ${ids.length} 个 fs_id`);
-          }
+            }
+          });
+          log(`从页面提取了 ${this._fileMap.size} 个 fs_id`);
         }
 
-        // 也尝试找 __INITIAL_STATE__ 等全局变量
+        // 也尝试找 window 全局变量
         for (const key of ['__INITIAL_STATE__', 'yunData', 'pageData', 'shareData']) {
           try {
             const val = unsafeWindow[key];
@@ -563,13 +605,19 @@
                 for (const item of files) {
                   if (item.fs_id) {
                     const pos = item._position ?? files.indexOf(item);
+                    const dlink = item.dlink || item.url || item.download_url || '';
                     this._fileMap.set(String(pos), {
                       fs_id: String(item.fs_id),
-                      name: item.file_name || item.server_filename || item.name || ''
+                      name: item.file_name || item.server_filename || item.name || '',
+                      dlink: typeof dlink === 'string' ? dlink.replace(/\\\//g, '/') : ''
                     });
                   }
                 }
                 log(`从 window.${key} 提取了 ${files.length} 个文件`);
+                // 有 dlink 直接返回
+                for (const [, v] of this._fileMap) {
+                  if (v.dlink) return v.dlink;
+                }
                 return;
               }
             }
@@ -654,28 +702,32 @@
         }, 6000);
       },
 
-      // 获取直链（直接调用百度 API）
+      // 获取直链
       async fetchDirectLink(fileId) {
-        // 从缓存取真实 fs_id
-        let realFsId = fileId;
+        // 1. 查缓存 —— 可能已经存了 dlink
+        let cached = null;
         if (typeof fileId === 'string' && fileId.startsWith('pos:')) {
-          const pos = fileId.replace('pos:', '');
-          const cached = this._fileMap.get(pos);
-          if (cached?.fs_id) realFsId = cached.fs_id;
+          cached = this._fileMap.get(fileId.replace('pos:', ''));
+        }
+        if (cached) {
+          if (cached.dlink) {
+            log('使用缓存的 dlink');
+            return cached.dlink;
+          }
         }
 
+        const realFsId = cached?.fs_id || fileId;
         const share = this._getShareParams();
         const baseUrl = location.origin;
         const ts = Date.now();
 
-        // 方式 1: POST /api/sharedownload（分享页专用）
+        // 2. POST /api/sharedownload（分享页）
         if (location.pathname.startsWith('/s/')) {
           try {
             const body = new URLSearchParams();
             body.append('fs_id', JSON.stringify([Number(realFsId)]));
             body.append('surl', share.surl);
             if (share.pwd) body.append('pwd', share.pwd);
-            if (share.bdstoken) body.append('bdstoken', share.bdstoken);
 
             const resp = await fetch(
               `${baseUrl}/api/sharedownload?app_id=${share.app_id}&channel=chunlei&clienttype=0&web=1&logid=${ts}`,
@@ -687,27 +739,37 @@
               }
             );
             const text = await resp.text();
-            const result = LinkExtractor.extract('baidu', text, '');
-            if (result) return result.url;
-            log('sharedownload POST 响应:', text.substring(0, 200));
+            // 解析响应中的 dlink
+            try {
+              const data = JSON.parse(text);
+              let dlink = data?.data?.dlink || data?.dlink || null;
+              if (dlink) {
+                // 百度返回的 dlink 可能需要追加参数
+                dlink = dlink.replace(/\\\//g, '/');
+                log('从 sharedownload 获取到 dlink');
+                return dlink;
+              }
+            } catch (e) {}
+            log('sharedownload 响应:', text.substring(0, 300));
           } catch (e) {
             log('sharedownload 失败:', e.message);
           }
         }
 
-        // 方式 2: GET /api/download（个人页）
+        // 3. GET /api/download（个人页）
         try {
           const resp = await fetch(
-            `${baseUrl}/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0&bdstoken=${share.bdstoken}`,
+            `${baseUrl}/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0`,
             { credentials: 'include' }
           );
           const text = await resp.text();
-          const result = LinkExtractor.extract('baidu', text, '');
-          if (result) return result.url;
-          log('download GET 响应:', text.substring(0, 200));
-        } catch (e) {
-          log('download 失败:', e.message);
-        }
+          try {
+            const data = JSON.parse(text);
+            let dlink = data?.data?.dlink || data?.dlink || null;
+            if (dlink) return dlink.replace(/\\\//g, '/');
+          } catch (e) {}
+          log('download 响应:', text.substring(0, 300));
+        } catch (e) {}
 
         return null;
       }
