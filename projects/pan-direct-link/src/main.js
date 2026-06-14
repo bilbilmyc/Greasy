@@ -475,28 +475,33 @@
 
       probeDOM() {
         log('--- DOM 结构探测 ---');
-        // 如果分享页，打印文件行元素
         if (this._isSharePage()) {
           log('分享页模式');
-          const ddList = document.querySelectorAll('dd');
-          ddList.forEach((dd, i) => {
-            const cls = (dd.className || '').substring(0, 100);
-            const text = (dd.textContent || '').trim().substring(0, 80);
-            const hasData = Object.keys(dd.dataset).join(',');
-            if (text || cls) {
-              log(`dd[${i}]`, `class="${cls}"`, `text="${text}"`, `data:[${hasData}]`);
+          const fileRows = document.querySelectorAll('dd.g-clearfix.AuPKyz, dd.JS-item-active, dd.open-enable');
+          log(`找到 ${fileRows.length} 个文件行`);
+          fileRows.forEach((dd, i) => {
+            // 所有属性（不仅 data-）
+            const attrs = {};
+            for (const attr of dd.attributes) {
+              attrs[attr.name] = attr.value.substring(0, 40);
             }
+            const html = dd.innerHTML.substring(0, 300).replace(/</g, '&lt;');
+            log(`文件行[${i}]`, JSON.stringify(attrs));
+            log(`  HTML: ${html}`);
+            // 查找所有子元素中的 data 属性
+            dd.querySelectorAll('[data-]').forEach((el, j) => {
+              log(`  子元素[${j}]`, el.tagName, 'data:', JSON.stringify(el.dataset));
+            });
           });
-        }
-        // 通用：打印所有含 dataset 的可能文件元素
-        const all = document.querySelectorAll('[data-fs_id], [data-fsid], [data-id]');
-        if (all.length === 0) {
-          log('未找到含 data-fs_id 的元素');
-        } else {
-          all.forEach((el, i) => {
-            log(`data元素[${i}]`, el.tagName, `class="${(el.className||'').substring(0,60)}"`,
-                'data:', JSON.stringify(el.dataset));
-          });
+
+          // 查 window 全局变量（百度经常把文件信息放这）
+          const globalKeys = ['__INITIAL_STATE__', 'yunData', 'bdstoken', 'logid', 'shareData'];
+          for (const key of globalKeys) {
+            if (window[key]) {
+              const val = JSON.stringify(window[key]).substring(0, 200);
+              log(`全局变量 ${key}: ${val}`);
+            }
+          }
         }
         log('--- DOM 探测结束 ---');
       },
