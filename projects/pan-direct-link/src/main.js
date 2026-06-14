@@ -706,26 +706,28 @@
         }
       },
 
-      // 从页面提取分享参数
+      // 从用户主站页面或 cookie 获取 bdstoken
+      async _fetchBdstoken() {
+        // 尝试从首页获取 bdstoken（用户已登录时有效）
+        try {
+          const resp = await fetch('https://pan.baidu.com/', {
+            credentials: 'include'
+          });
+          const html = await resp.text();
+          const m = html.match(/bdstoken["']\s*[:=]\s*["']([^"']+)["']/);
+          if (m) {
+            log('从首页获取 bdstoken 成功');
+            return m[1];
+          }
+        } catch (e) {}
+        return '';
+      },
+
       _getShareParams() {
         const url = new URL(location.href);
         const surl = location.pathname.replace('/s/', '');
         const pwd = url.searchParams.get('pwd') || '';
-        const params = { surl, pwd, app_id: '250528', bdstoken: '' };
-
-        // 从页面找 bdstoken
-        const scripts = document.querySelectorAll('script');
-        for (const s of scripts) {
-          const t = s.textContent || '';
-          const m = t.match(/["']bdstoken["']\s*[:=]\s*["']([^"']+)["']/);
-          if (m) params.bdstoken = m[1];
-        }
-        // 从 URL 找 bdstoken
-        const bt = url.searchParams.get('bdstoken');
-        if (bt) params.bdstoken = bt;
-
-        log('分享参数:', { surl, pwd: pwd ? '***' : '', hasToken: !!params.bdstoken });
-        return params;
+        return { surl, pwd, app_id: '250528' };
       },
 
       // 初始化时主动提取文件信息
@@ -738,70 +740,57 @@
 
       // 获取直链
       async fetchDirectLink(fileId) {
-        // 1. 查缓存 —— 可能已经存了 dlink
         let cached = null;
         if (typeof fileId === 'string' && fileId.startsWith('pos:')) {
           cached = this._fileMap.get(fileId.replace('pos:', ''));
         }
-        if (cached) {
-          if (cached.dlink) {
-            log('使用缓存的 dlink');
-            return cached.dlink;
-          }
-        }
+        if (cached?.dlink) return cached.dlink;
 
         const realFsId = cached?.fs_id || fileId;
         const share = this._getShareParams();
         const baseUrl = location.origin;
+
+        // 0. 先获取 bdstoken
+        const bdstoken = await this._fetchBdstoken();
+        log('bdstoken:', bdstoken ? '已获取' : '未获取到');
+
+        // 1. POST /api/sharedownload
         const ts = Date.now();
+        try {
+          const body = new URLSearchParams();
+          body.append('fs_id', JSON.stringify([Number(realFsId)]));
+          body.append('surl', share.surl);
+          if (share.pwd) body.append('pwd', share.pwd);
+          if (bdstoken) body.append('bdstoken', bdstoken);
 
-        // 2. POST /api/sharedownload（分享页）
-        if (location.pathname.startsWith('/s/')) {
-          try {
-            const body = new URLSearchParams();
-            body.append('fs_id', JSON.stringify([Number(realFsId)]));
-            body.append('surl', share.surl);
-            if (share.pwd) body.append('pwd', share.pwd);
-
-            const resp = await fetch(
-              `${baseUrl}/api/sharedownload?app_id=${share.app_id}&channel=chunlei&clienttype=0&web=1&logid=${ts}`,
-              {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body.toString()
-              }
-            );
-            const text = await resp.text();
-            // 解析响应中的 dlink
-            try {
-              const data = JSON.parse(text);
-              let dlink = data?.data?.dlink || data?.dlink || null;
-              if (dlink) {
-                // 百度返回的 dlink 可能需要追加参数
-                dlink = dlink.replace(/\\\//g, '/');
-                log('从 sharedownload 获取到 dlink');
-                return dlink;
-              }
-            } catch (e) {}
-            log('sharedownload 响应:', text.substring(0, 300));
-          } catch (e) {
-            log('sharedownload 失败:', e.message);
-          }
+          const resp = await fetch(
+            `${baseUrl}/api/sharedownload?app_id=${share.app_id}&channel=chunlei&clienttype=0&web=1&logid=${ts}`,
+            {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: body.toString()
+            }
+          );
+          const text = await resp.text();
+          const data = JSON.parse(text);
+          const dlink = data?.data?.dlink || data?.dlink || null;
+          if (dlink) return dlink.replace(/\\\//g, '/');
+          log('sharedownload 响应:', text.substring(0, 300));
+        } catch (e) {
+          log('sharedownload 失败:', e.message);
         }
 
-        // 3. GET /api/download（个人页）
+        // 2. GET /api/download
         try {
           const resp = await fetch(
-            `${baseUrl}/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0`,
+            `${baseUrl}/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0${bdstoken ? '&bdstoken='+bdstoken : ''}`,
             { credentials: 'include' }
           );
           const text = await resp.text();
-          try {
-            const data = JSON.parse(text);
-            let dlink = data?.data?.dlink || data?.dlink || null;
-            if (dlink) return dlink.replace(/\\\//g, '/');
-          } catch (e) {}
+          const data = JSON.parse(text);
+          const dlink = data?.data?.dlink || data?.dlink || null;
+          if (dlink) return dlink.replace(/\\\//g, '/');
           log('download 响应:', text.substring(0, 300));
         } catch (e) {}
 
