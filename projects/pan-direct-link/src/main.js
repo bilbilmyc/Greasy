@@ -30,8 +30,7 @@
         return {
           name: 'baidu',
           display: '百度网盘',
-          // 文件管理页 /disk/home, 分享页 /s/...
-          isFileList: path.includes('/disk/') || path === '/home'
+          isFileList: path.includes('/disk/') || path === '/home' || path.startsWith('/s/')
         };
       }
       if (host.includes('pan.quark.cn')) {
@@ -44,7 +43,6 @@
       return null;
     },
 
-    // 是否在文件管理页面（有文件列表）
     isFileList() {
       const p = this.detect();
       return p && p.isFileList;
