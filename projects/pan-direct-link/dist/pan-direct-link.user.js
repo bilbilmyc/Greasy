@@ -454,6 +454,10 @@
     const Adapters = {
       baidu: {
         name: 'baidu',
+        // 存储从 API 拦截到的文件信息
+        _fileMap: new Map(),
+        // _position -> { fs_id, name }
+
         // 检测是否分享页
         _isSharePage() {
           return location.pathname.startsWith('/s/');
@@ -461,28 +465,26 @@
         // 文件行选择器
         rowSelector() {
           if (this._isSharePage()) {
-            // 分享页文件行
-            return 'dd[class*="JS-item"], dd[class*="open-enable"], dd.g-clearfix.AuPKyz, [class*="share-file-list"] dd, .file-item';
+            return 'dd.g-clearfix.JS-item-active.open-enable';
           }
-          // 个人文件管理页
-          return '.file-list-item, [class*="filelist"] [class*="item"], .file-row, tbody tr';
+          return '.file-list-item, [class*="filelist"] [class*="item"], .file-row';
         },
         getFileName(row) {
-          var _nameEl$textContent, _row$textContent;
-          // 分享页文件名可能在链接或 span 中
-          const nameEl = row.querySelector('a[class*="file-name"], span[class*="name"], [class*="file-name"], [class*="file_name"]');
-          if (nameEl) return ((_nameEl$textContent = nameEl.textContent) == null ? void 0 : _nameEl$textContent.trim()) || '';
-
-          // 直接取行文本的前半部分（去掉日期）
-          const text = ((_row$textContent = row.textContent) == null ? void 0 : _row$textContent.trim()) || '';
-          // 分享页格式: "文件名 日期"
-          const parts = text.split(/\s{2,}/);
-          return parts[0] || text.substring(0, 40);
+          var _el$textContent;
+          const el = row.querySelector('a.filename, [class*="file-name"] a, .file-name .text a');
+          return (el == null || (_el$textContent = el.textContent) == null ? void 0 : _el$textContent.trim()) || (el == null ? void 0 : el.getAttribute('title')) || '';
         },
         getFileId(row) {
-          var _row$dataset, _row$querySelector, _row$dataset2, _row$dataset3;
-          // 分享页：可能 data 属性存了 fs_id
-          return ((_row$dataset = row.dataset) == null ? void 0 : _row$dataset.fs_id) || row.getAttribute('data-fsid') || ((_row$querySelector = row.querySelector('[data-fsid]')) == null ? void 0 : _row$querySelector.getAttribute('data-fsid')) || ((_row$dataset2 = row.dataset) == null ? void 0 : _row$dataset2.id) || ((_row$dataset3 = row.dataset) == null ? void 0 : _row$dataset3.fileid) || '';
+          // _position 属性是文件在列表中的索引
+          const pos = row.getAttribute('_position');
+          if (pos !== null) {
+            // 尝试从 API 拦截数据中找
+            const cached = this._fileMap.get(pos);
+            if (cached != null && cached.fs_id) return cached.fs_id;
+            // 没找到就存 position，后续 API 拦截到了再关联
+            return `pos:${pos}`;
+          }
+          return '';
         },
         probeDOM() {
           log('--- DOM 结构探测 ---');
@@ -518,55 +520,88 @@
         },
         // 注册 API 拦截钩子
         setupInterceptors() {
-          // 百度下载相关 API 路径
-          const apiPaths = ['/api/download', '/api/invoker/check',
-          // 客户端检查
-          '/rest/2.0/services/cloud_dl', '/share/download', '/api/sharedownload'];
-          for (const path of apiPaths) {
+          // 1. 拦截文件列表 API（获取 fs_id）
+          // 分享页加载文件列表: /share/list?...
+          // 个人页: /api/list?...
+          NetworkInterceptor.addHook('/share/list', (body, url) => {
+            try {
+              var _data$data7;
+              const data = JSON.parse(body);
+              if (data != null && (_data$data7 = data.data) != null && _data$data7.list) {
+                for (const item of data.data.list) {
+                  if (item.fs_id) {
+                    // 按 position 索引存储
+                    this._fileMap.set(String(item._position || item.index || data.data.list.indexOf(item)), {
+                      fs_id: item.fs_id,
+                      name: item.file_name || item.server_filename || ''
+                    });
+                  }
+                }
+                log(`缓存 ${data.data.list.length} 个文件信息`);
+              }
+            } catch (e) {}
+          });
+
+          // 2. 拦截下载请求
+          const dlPaths = ['/api/download', '/share/download', '/api/sharedownload'];
+          for (const path of dlPaths) {
             NetworkInterceptor.addHook(path, (body, url) => {
               const result = LinkExtractor.extract('baidu', body, url);
               if (result) {
                 log('捕获百度直链:', result.url.substring(0, 80) + '...');
                 LinkPresenter.showLink(result.url, '百度网盘文件');
               }
-              // 即使没提取到直链，也打印响应体摘要用于调试
-              if (body.length < 500) {
-                log(`API响应 [${path}]:`, body.substring(0, 200));
-              }
             });
           }
+
+          // 3. 拦截 /api/invoker/check 并打印响应
+          NetworkInterceptor.addHook('/api/invoker/check', (body, url) => {
+            log(`客户端检查响应: ${body}`);
+          });
         },
         // 获取直链（直接调用百度 API）
         async fetchDirectLink(fileId) {
-          // TODO: 需要根据实际百度 API 参数调整
-          // 典型的百度下载 API:
-          // GET /api/download?fidlist=[${fileId}]&type=1&channel=chunlei&web=1
-          const url = `/api/download?fidlist=[${fileId}]&type=1&channel=chunlei&web=1&clienttype=0`;
-          try {
-            const resp = await fetch(url, {
-              credentials: 'include'
-            });
-            const text = await resp.text();
-            const result = LinkExtractor.extract('baidu', text, url);
-            if (result) return result.url;
-            log('下载接口原始响应:', text.substring(0, 300));
-            return null;
-          } catch (e) {
-            error('调用下载 API 失败:', e.message);
-            return null;
+          // 如果是 pos:N 格式，去缓存里拿真实的 fs_id
+          let realFsId = fileId;
+          if (typeof fileId === 'string' && fileId.startsWith('pos:')) {
+            const pos = fileId.replace('pos:', '');
+            const cached = this._fileMap.get(pos);
+            if (cached != null && cached.fs_id) realFsId = cached.fs_id;
           }
+
+          // 尝试多个 API 路径（分享页 vs 个人页）
+          const apiUrls = [];
+          if (this._isSharePage()) {
+            const shareUrl = location.pathname + location.search;
+            apiUrls.push(`/api/sharedownload?fs_id=${realFsId}&share_url=${encodeURIComponent(shareUrl)}`);
+          }
+          apiUrls.push(`/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0`);
+          for (const url of apiUrls) {
+            try {
+              const resp = await fetch(url, {
+                credentials: 'include'
+              });
+              const text = await resp.text();
+              const result = LinkExtractor.extract('baidu', text, url);
+              if (result) return result.url;
+              log(`API ${url} 响应:`, text.substring(0, 200));
+            } catch (e) {
+              log(`API ${url} 失败:`, e.message);
+            }
+          }
+          return null;
         }
       },
       quark: {
         name: 'quark',
         rowSelector: '[class*="file-item"], [class*="list-item"], .file-row',
         getFileName(row) {
-          var _row$querySelector2;
-          return ((_row$querySelector2 = row.querySelector('[class*="name"], [class*="title"]')) == null || (_row$querySelector2 = _row$querySelector2.textContent) == null ? void 0 : _row$querySelector2.trim()) || '';
+          var _row$querySelector;
+          return ((_row$querySelector = row.querySelector('[class*="name"], [class*="title"]')) == null || (_row$querySelector = _row$querySelector.textContent) == null ? void 0 : _row$querySelector.trim()) || '';
         },
         getFileId(row) {
-          var _row$dataset4, _row$querySelector3;
-          return ((_row$dataset4 = row.dataset) == null ? void 0 : _row$dataset4.id) || row.getAttribute('data-id') || ((_row$querySelector3 = row.querySelector('[data-id]')) == null ? void 0 : _row$querySelector3.getAttribute('data-id')) || '';
+          var _row$dataset, _row$querySelector2;
+          return ((_row$dataset = row.dataset) == null ? void 0 : _row$dataset.id) || row.getAttribute('data-id') || ((_row$querySelector2 = row.querySelector('[data-id]')) == null ? void 0 : _row$querySelector2.getAttribute('data-id')) || '';
         },
         setupInterceptors() {
           // 夸克下载相关 API 路径
