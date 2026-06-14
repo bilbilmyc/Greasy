@@ -493,10 +493,19 @@
           // 查 window 全局变量（百度经常把文件信息放这）
           const globalKeys = ['__INITIAL_STATE__', 'yunData', 'bdstoken', 'logid', 'shareData'];
           for (const key of globalKeys) {
-            if (window[key]) {
-              const val = JSON.stringify(window[key]).substring(0, 200);
-              log(`全局变量 ${key}: ${val}`);
-            }
+            try {
+              if (window[key]) {
+                const val = JSON.stringify(window[key]).substring(0, 400);
+                log(`全局变量 ${key}: ${val}`);
+              }
+            } catch (e) {}
+          }
+          // 额外打印 bdstoken 提取结果
+          const share = this._getShareParams();
+          log(`bdstoken="${share.bdstoken}" surl="${share.surl}" pwd="${share.pwd}"`);
+          // 打印 _fileMap
+          if (this._fileMap.size > 0) {
+            log('_fileMap:', JSON.stringify([...this._fileMap.entries()]));
           }
         }
         log('--- DOM 探测结束 ---');
@@ -615,11 +624,31 @@
         }
       },
 
+      // 从页面提取分享参数
+      _getShareParams() {
+        const url = new URL(location.href);
+        const surl = location.pathname.replace('/s/', '');
+        const pwd = url.searchParams.get('pwd') || '';
+        const params = { surl, pwd, app_id: '250528', bdstoken: '' };
+
+        // 从页面找 bdstoken
+        const scripts = document.querySelectorAll('script');
+        for (const s of scripts) {
+          const t = s.textContent || '';
+          const m = t.match(/["']bdstoken["']\s*[:=]\s*["']([^"']+)["']/);
+          if (m) params.bdstoken = m[1];
+        }
+        // 从 URL 找 bdstoken
+        const bt = url.searchParams.get('bdstoken');
+        if (bt) params.bdstoken = bt;
+
+        log('分享参数:', { surl, pwd: pwd ? '***' : '', hasToken: !!params.bdstoken });
+        return params;
+      },
+
       // 初始化时主动提取文件信息
       init() {
-        // 先尝试从页面提取
         setTimeout(() => this._extractFileInfoFromPage(), 2000);
-        // 5 秒后再试一次（可能数据是异步加载的）
         setTimeout(() => {
           if (this._fileMap.size === 0) this._extractFileInfoFromPage();
         }, 6000);
@@ -627,7 +656,7 @@
 
       // 获取直链（直接调用百度 API）
       async fetchDirectLink(fileId) {
-        // 如果是 pos:N 格式，去缓存里拿真实的 fs_id
+        // 从缓存取真实 fs_id
         let realFsId = fileId;
         if (typeof fileId === 'string' && fileId.startsWith('pos:')) {
           const pos = fileId.replace('pos:', '');
@@ -635,29 +664,51 @@
           if (cached?.fs_id) realFsId = cached.fs_id;
         }
 
-        // 尝试多个 API 路径（分享页 vs 个人页）
-        const apiUrls = [];
-        if (this._isSharePage()) {
-          const shareUrl = location.pathname + location.search;
-          apiUrls.push(
-            `/api/sharedownload?fs_id=${realFsId}&share_url=${encodeURIComponent(shareUrl)}`
-          );
-        }
-        apiUrls.push(
-          `/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0`
-        );
+        const share = this._getShareParams();
+        const baseUrl = location.origin;
+        const ts = Date.now();
 
-        for (const url of apiUrls) {
+        // 方式 1: POST /api/sharedownload（分享页专用）
+        if (location.pathname.startsWith('/s/')) {
           try {
-            const resp = await fetch(url, { credentials: 'include' });
+            const body = new URLSearchParams();
+            body.append('fs_id', JSON.stringify([Number(realFsId)]));
+            body.append('surl', share.surl);
+            if (share.pwd) body.append('pwd', share.pwd);
+            if (share.bdstoken) body.append('bdstoken', share.bdstoken);
+
+            const resp = await fetch(
+              `${baseUrl}/api/sharedownload?app_id=${share.app_id}&channel=chunlei&clienttype=0&web=1&logid=${ts}`,
+              {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+              }
+            );
             const text = await resp.text();
-            const result = LinkExtractor.extract('baidu', text, url);
+            const result = LinkExtractor.extract('baidu', text, '');
             if (result) return result.url;
-            log(`API ${url} 响应:`, text.substring(0, 200));
+            log('sharedownload POST 响应:', text.substring(0, 200));
           } catch (e) {
-            log(`API ${url} 失败:`, e.message);
+            log('sharedownload 失败:', e.message);
           }
         }
+
+        // 方式 2: GET /api/download（个人页）
+        try {
+          const resp = await fetch(
+            `${baseUrl}/api/download?fidlist=[${realFsId}]&type=1&channel=chunlei&web=1&clienttype=0&bdstoken=${share.bdstoken}`,
+            { credentials: 'include' }
+          );
+          const text = await resp.text();
+          const result = LinkExtractor.extract('baidu', text, '');
+          if (result) return result.url;
+          log('download GET 响应:', text.substring(0, 200));
+        } catch (e) {
+          log('download 失败:', e.message);
+        }
+
         return null;
       }
     },
