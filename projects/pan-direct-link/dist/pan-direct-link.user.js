@@ -377,25 +377,26 @@
       /**
        * 开始监听文件列表
        * @param {string} platform - 'baidu' | 'quark'
-       * @param {string} rowSelector - 文件行的 CSS 选择器
+       * @param {string|function} rowSelector - CSS 选择器或返回选择器的函数
        * @param {function} getFileName - (rowElement) => string
        * @param {function} getFileId - (rowElement) => string|number
        */
       start(platform, rowSelector, getFileName, getFileId) {
         this._platform = platform;
+        const resolveSelector = () => typeof rowSelector === 'function' ? rowSelector() : rowSelector;
 
         // 立即扫描一次已有的行
-        this._scanRows(rowSelector, getFileName, getFileId);
+        this._scanRows(resolveSelector(), getFileName, getFileId);
 
         // 持续监听新增的行
         this._observer = new MutationObserver(() => {
-          this._scanRows(rowSelector, getFileName, getFileId);
+          this._scanRows(resolveSelector(), getFileName, getFileId);
         });
         this._observer.observe(document.body, {
           childList: true,
           subtree: true
         });
-        log(`文件列表监视已启动: ${rowSelector}`);
+        log(`文件列表监视已启动: ${resolveSelector()}`);
       },
       _scanRows(rowSelector, getFileName, getFileId) {
         const rows = document.querySelectorAll(rowSelector);
@@ -429,13 +430,15 @@
         }
       },
       /**
-       * 获取直链（平台特定的 API 调用逻辑）
-       * TODO: 根据实际平台的 API 实现
+       * 获取直链（优先使用适配器的 fetchDirectLink）
        */
       async _fetchDirectLink(platform, fileId) {
-        // 这里需要根据实际抓包结果来填充
-        // 不同平台、不同 API 的调用方式不同
-        throw new Error(`获取直链逻辑待实现: ${platform} fileId=${fileId}`);
+        const adapter = Adapters[platform];
+        if (adapter && typeof adapter.fetchDirectLink === 'function') {
+          return adapter.fetchDirectLink(fileId);
+        }
+        log(`获取直链逻辑待实现: ${platform} fileId=${fileId}`);
+        return null;
       },
       stop() {
         if (this._observer) {
@@ -451,21 +454,68 @@
     const Adapters = {
       baidu: {
         name: 'baidu',
-        // 文件行选择器（需要实际页面上确认）
-        rowSelector: '.file-list-item, [class*="filelist"] [class*="item"], .file-row, tbody tr',
+        // 检测是否分享页
+        _isSharePage() {
+          return location.pathname.startsWith('/s/');
+        },
+        // 文件行选择器
+        rowSelector() {
+          if (this._isSharePage()) {
+            // 分享页文件行
+            return 'dd[class*="JS-item"], dd[class*="open-enable"], dd.g-clearfix.AuPKyz, [class*="share-file-list"] dd, .file-item';
+          }
+          // 个人文件管理页
+          return '.file-list-item, [class*="filelist"] [class*="item"], .file-row, tbody tr';
+        },
         getFileName(row) {
-          var _row$querySelector;
-          return ((_row$querySelector = row.querySelector('[class*="name"], [class*="title"], .file-name')) == null || (_row$querySelector = _row$querySelector.textContent) == null ? void 0 : _row$querySelector.trim()) || '';
+          var _nameEl$textContent, _row$textContent;
+          // 分享页文件名可能在链接或 span 中
+          const nameEl = row.querySelector('a[class*="file-name"], span[class*="name"], [class*="file-name"], [class*="file_name"]');
+          if (nameEl) return ((_nameEl$textContent = nameEl.textContent) == null ? void 0 : _nameEl$textContent.trim()) || '';
+
+          // 直接取行文本的前半部分（去掉日期）
+          const text = ((_row$textContent = row.textContent) == null ? void 0 : _row$textContent.trim()) || '';
+          // 分享页格式: "文件名 日期"
+          const parts = text.split(/\s{2,}/);
+          return parts[0] || text.substring(0, 40);
         },
         getFileId(row) {
-          var _row$dataset, _row$querySelector2;
-          // 尝试从 data 属性或链接中提取 fs_id
-          return ((_row$dataset = row.dataset) == null ? void 0 : _row$dataset.fs_id) || row.getAttribute('data-fsid') || ((_row$querySelector2 = row.querySelector('[data-fsid]')) == null ? void 0 : _row$querySelector2.getAttribute('data-fsid')) || '';
+          var _row$dataset, _row$querySelector, _row$dataset2, _row$dataset3;
+          // 分享页：可能 data 属性存了 fs_id
+          return ((_row$dataset = row.dataset) == null ? void 0 : _row$dataset.fs_id) || row.getAttribute('data-fsid') || ((_row$querySelector = row.querySelector('[data-fsid]')) == null ? void 0 : _row$querySelector.getAttribute('data-fsid')) || ((_row$dataset2 = row.dataset) == null ? void 0 : _row$dataset2.id) || ((_row$dataset3 = row.dataset) == null ? void 0 : _row$dataset3.fileid) || '';
+        },
+        probeDOM() {
+          log('--- DOM 结构探测 ---');
+          // 如果分享页，打印文件行元素
+          if (this._isSharePage()) {
+            log('分享页模式');
+            const ddList = document.querySelectorAll('dd');
+            ddList.forEach((dd, i) => {
+              const cls = (dd.className || '').substring(0, 100);
+              const text = (dd.textContent || '').trim().substring(0, 80);
+              const hasData = Object.keys(dd.dataset).join(',');
+              if (text || cls) {
+                log(`dd[${i}]`, `class="${cls}"`, `text="${text}"`, `data:[${hasData}]`);
+              }
+            });
+          }
+          // 通用：打印所有含 dataset 的可能文件元素
+          const all = document.querySelectorAll('[data-fs_id], [data-fsid], [data-id]');
+          if (all.length === 0) {
+            log('未找到含 data-fs_id 的元素');
+          } else {
+            all.forEach((el, i) => {
+              log(`data元素[${i}]`, el.tagName, `class="${(el.className || '').substring(0, 60)}"`, 'data:', JSON.stringify(el.dataset));
+            });
+          }
+          log('--- DOM 探测结束 ---');
         },
         // 注册 API 拦截钩子
         setupInterceptors() {
-          // 百度下载相关 API 路径（需要根据实际抓包调整）
-          const apiPaths = ['/api/download', '/rest/2.0/services/cloud_dl', '/share/download', '/api/sharedownload'];
+          // 百度下载相关 API 路径
+          const apiPaths = ['/api/download', '/api/invoker/check',
+          // 客户端检查
+          '/rest/2.0/services/cloud_dl', '/share/download', '/api/sharedownload'];
           for (const path of apiPaths) {
             NetworkInterceptor.addHook(path, (body, url) => {
               const result = LinkExtractor.extract('baidu', body, url);
@@ -473,7 +523,31 @@
                 log('捕获百度直链:', result.url.substring(0, 80) + '...');
                 LinkPresenter.showLink(result.url, '百度网盘文件');
               }
+              // 即使没提取到直链，也打印响应体摘要用于调试
+              if (body.length < 500) {
+                log(`API响应 [${path}]:`, body.substring(0, 200));
+              }
             });
+          }
+        },
+        // 获取直链（直接调用百度 API）
+        async fetchDirectLink(fileId) {
+          // TODO: 需要根据实际百度 API 参数调整
+          // 典型的百度下载 API:
+          // GET /api/download?fidlist=[${fileId}]&type=1&channel=chunlei&web=1
+          const url = `/api/download?fidlist=[${fileId}]&type=1&channel=chunlei&web=1&clienttype=0`;
+          try {
+            const resp = await fetch(url, {
+              credentials: 'include'
+            });
+            const text = await resp.text();
+            const result = LinkExtractor.extract('baidu', text, url);
+            if (result) return result.url;
+            log('下载接口原始响应:', text.substring(0, 300));
+            return null;
+          } catch (e) {
+            error('调用下载 API 失败:', e.message);
+            return null;
           }
         }
       },
@@ -481,12 +555,12 @@
         name: 'quark',
         rowSelector: '[class*="file-item"], [class*="list-item"], .file-row',
         getFileName(row) {
-          var _row$querySelector3;
-          return ((_row$querySelector3 = row.querySelector('[class*="name"], [class*="title"]')) == null || (_row$querySelector3 = _row$querySelector3.textContent) == null ? void 0 : _row$querySelector3.trim()) || '';
+          var _row$querySelector2;
+          return ((_row$querySelector2 = row.querySelector('[class*="name"], [class*="title"]')) == null || (_row$querySelector2 = _row$querySelector2.textContent) == null ? void 0 : _row$querySelector2.trim()) || '';
         },
         getFileId(row) {
-          var _row$dataset2, _row$querySelector4;
-          return ((_row$dataset2 = row.dataset) == null ? void 0 : _row$dataset2.id) || row.getAttribute('data-id') || ((_row$querySelector4 = row.querySelector('[data-id]')) == null ? void 0 : _row$querySelector4.getAttribute('data-id')) || '';
+          var _row$dataset4, _row$querySelector3;
+          return ((_row$dataset4 = row.dataset) == null ? void 0 : _row$dataset4.id) || row.getAttribute('data-id') || ((_row$querySelector3 = row.querySelector('[data-id]')) == null ? void 0 : _row$querySelector3.getAttribute('data-id')) || '';
         },
         setupInterceptors() {
           // 夸克下载相关 API 路径
@@ -524,11 +598,16 @@
         // 注册 API 拦截钩子
         adapter.setupInterceptors();
 
+        // 3 秒后探测 DOM 结构（方便调试）
+        setTimeout(() => {
+          if (adapter.probeDOM) adapter.probeDOM();
+        }, 5000);
+
         // 监听文件列表注入直链按钮
         if (PlatformDetector.isFileList()) {
           setTimeout(() => {
             FileListWatcher.start(platform.name, adapter.rowSelector, row => adapter.getFileName(row), row => adapter.getFileId(row));
-          }, 2000); // 等待页面文件列表渲染
+          }, 3000);
         }
       }
       log('就绪 ✅');
