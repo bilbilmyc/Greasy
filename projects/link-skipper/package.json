@@ -1,0 +1,20 @@
+{
+  "name": "link-skipper",
+  "version": "0.1.0",
+  "description": "跳过 t.cn/jump.bdimg.com/link.zhihu.com 等中间页，直达目标 URL。",
+  "private": true,
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w",
+    "release": "npm run build"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "rollup": "^4.12.0"
+  }
+}
