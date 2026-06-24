@@ -5,10 +5,14 @@
 ## 目录结构
 
 ```
-├── projects/                      # 所有油猴插件
+├── projects/                      # 所有油猴插件源码
 │   ├── greasy-ad-skipper/         # 插件 1: 视频广告跳过助手
+│   ├── pan-direct-link/           # 插件 2: 百度网盘/夸克网盘直链
+│   ├── reader-mode/               # 插件 3: 内容站点去广告 + 免登录
 │   ├── _template/                 # 新插件模板
 │   └── ...                        # 后续新增插件在此
+├── dist/                          # 油猴脚本构建产物（装到 Tampermonkey 的 .user.js）
+│   └── reader-mode.user.js
 ├── .gitignore
 └── README.md
 ```
@@ -19,6 +23,7 @@
 |---|------|------|------|
 | 1 | [greasy-ad-skipper](projects/greasy-ad-skipper/) | ✅ 开发完成 | 多平台视频广告跳过（YouTube/B站/腾讯/爱奇艺/优酷/芒果TV） |
 | 2 | [pan-direct-link](projects/pan-direct-link/) | 🚧 开发中 | 百度网盘/夸克网盘 网页端直链下载 |
+| 3 | [reader-mode](projects/reader-mode/) | 🚧 v0.1 | CSDN + 知乎：去广告 + 免登录 |
 
 ## 新建插件
 
@@ -41,4 +46,4 @@ npm install
 - 每个插件独立目录，独立 `package.json` 和构建配置
 - 共享工具函数放在插件各自 `src/utils/` 中（按需复制）
 - 插件间不互相依赖，保持独立可发布
-- 构建产物输出到各插件的 `dist/` 目录
+- 构建产物统一输出到仓库根 `dist/<plugin-name>.user.js`（便于一眼找到、安装）
